@@ -1,0 +1,18 @@
+name: Build manifest
+on:
+  push:
+    branches: [ master, main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Create manifest
+        uses: JackMacWindows/cc-manifest-action@v1
+        with:
+          name: CC_AF_AE2_my_master
+      - name: Upload manifests
+        uses: actions/upload-artifact@v2
+        with:
+          name: manifests
+          path: ./*.json

@@ -248,4 +248,5 @@ prepare()
 while true do
     updateStats()
     sleep(1) -- Увеличил интервал для уменьшения нагрузки
+    
 end

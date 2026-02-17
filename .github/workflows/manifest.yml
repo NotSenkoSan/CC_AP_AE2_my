@@ -1,18 +1,25 @@
 name: Build manifest
 on:
   push:
-    branches: [ master, main ]
+    branches: [ "master", "main" ]
+  workflow_dispatch: # Позволяет запускать вручную
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+      
       - name: Create manifest
-        uses: JackMacWindows/cc-manifest-action@v1
+        uses: JackMacWindows/cc-manifest-action@main
         with:
-          name: CC_AF_AE2_my_master
+          name: CC_AF_AE2_my_scripts
+          paths: |
+            .
+          baseurl: https://raw.githubusercontent.com/NotSenkoSan/CC_AF_AE2_my_master
+          
       - name: Upload manifests
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: manifests
           path: ./*.json

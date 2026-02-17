@@ -66,9 +66,11 @@ function prepare()
     mon.setTextScale(1)
     mon.write(label)
     mon.setCursorPos(1, 1)
-    drawBox(2, monX - 1, 3, monY - 10, "Cells (Page " .. currentPage .. "/" .. totalPages .. ")", colors.gray, colors.lightGray)
+    drawBox(2, monX - 1, 3, monY - 10, "Cells", colors.gray, colors.lightGray)
     drawBox(2, monX - 1, monY - 8, monY - 1, "Stats", colors.gray, colors.lightGray)
-    addBars()
+    
+    -- Получаем данные и отображаем текущую страницу
+    refreshDisplay()
     
     -- Подсказка по управлению
     mon.setCursorPos(monX - 15, monY - 2)
@@ -81,7 +83,7 @@ function prepare()
     mon.setTextColor(colors.white)
 end
 
-function addBars()
+function refreshDisplay()
     local cells = me.getCells()
     
     if not cells or #cells == 0 then
@@ -93,13 +95,36 @@ function addBars()
     data.cells = #cells
     totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
     
+    -- Очищаем область для баров
+    clear(3, monX - 3, 4, monY - 12)
+    
     -- Вычисляем какие ячейки показывать на текущей странице
     local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
     local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
     
-    -- Очищаем область для баров
-    clear(3, monX - 3, 4, monY - 12)
+    -- Обновляем заголовок с номером страницы
+    mon.setCursorPos(2, 3)
+    mon.setBackgroundColor(colors.gray)
+    mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
+    mon.setBackgroundColor(colors.black)
     
+    -- Сбрасываем счетчики
+    data.totalBytes = 0
+    data.usedBytes = 0
+    
+    -- Сначала посчитаем общую статистику со всех ячеек
+    for i = 1, #cells do
+        local cell = cells[i]
+        local totalBytes = cell.bytes or cell.totalBytes or 0
+        local usedBytes = cell.usedBytes or 0
+        
+        if totalBytes > 0 then
+            data.totalBytes = data.totalBytes + totalBytes
+            data.usedBytes = data.usedBytes + usedBytes
+        end
+    end
+    
+    -- Теперь отображаем только ячейки текущей страницы
     for i = startIdx, endIdx do
         local cell = cells[i]
         local pos = i - startIdx + 1  -- позиция на экране (1-20)
@@ -123,19 +148,8 @@ function addBars()
         mon.setCursorPos(x + 1, monY - 11)
         mon.write(string.format("#%d", i))
         
-        data.totalBytes = data.totalBytes + totalBytes
-        data.usedBytes = data.usedBytes + usedBytes
-        
         ::continue::
     end
-    
-    -- Обновляем заголовок с номером страницы
-    mon.setCursorPos(math.floor((monX/2)-(#label/2)), 1)
-    mon.setBackgroundColor(colors.black)
-    mon.write(label)
-    mon.setCursorPos(2, 3)
-    mon.setBackgroundColor(colors.gray)
-    mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
     
     -- Отрисовываем бары
     if bars and bars.construct then
@@ -144,6 +158,9 @@ function addBars()
     if bars and bars.screen then
         bars.screen()
     end
+    
+    -- Обновляем статистику внизу
+    updateStatsDisplay()
 end
 
 function nextPage()
@@ -154,9 +171,8 @@ function nextPage()
     end
     
     if oldPage ~= currentPage then
-        -- Перерисовываем экран
-        mon.clear()
-        prepare()
+        -- Перерисовываем только область с барами, не трогая рамки
+        refreshDisplay()
     end
 end
 
@@ -227,69 +243,7 @@ function roundToDecimal(num, decimalPlaces)
     return math.floor(num * mult + 0.5) / mult
 end
 
-function updateStats()
-    local newCells = me.getCells()
-    
-    data.totalBytes = 0
-    data.usedBytes = 0
-    
-    if not newCells then
-        data.cells = 0
-        print("getCells() returned nil")
-        return
-    end
-    
-    data.cells = #newCells
-    totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
-    
-    -- Проверяем не вышли ли за границы страниц
-    if currentPage > totalPages then
-        currentPage = totalPages
-    end
-    if currentPage < 1 then
-        currentPage = 1
-    end
-    
-    if #newCells == 0 then
-        clear(3, monX - 3, 4, monY - 12)
-        mon.setCursorPos(4, 5)
-        mon.write("No cells connected")
-    else 
-        -- Считаем общую статистику со всех ячеек
-        for i = 1, #newCells do
-            local cell = newCells[i]
-            local totalBytes = cell.bytes or cell.totalBytes or 0
-            local usedBytes = cell.usedBytes or 0
-            
-            if totalBytes > 0 then
-                data.totalBytes = data.totalBytes + totalBytes
-                data.usedBytes = data.usedBytes + usedBytes
-            end
-        end
-        
-        -- Перерисовываем только текущую страницу
-        local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
-        local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
-        
-        for i = startIdx, endIdx do
-            local cell = newCells[i]
-            local pos = i - startIdx + 1
-            
-            local totalBytes = cell.bytes or cell.totalBytes or 0
-            local usedBytes = cell.usedBytes or 0
-            
-            -- Обновляем бары
-            if bars and bars.set then
-                bars.set(tostring(pos), "cur", usedBytes)
-                bars.set(tostring(pos), "max", totalBytes)
-            end
-        end
-        
-        if bars and bars.screen then
-            bars.screen()
-        end
-    end
-    
+function updateStatsDisplay()
     -- Обновляем статистику
     clear(3, monX - 3, monY - 5, monY - 2)
     
@@ -304,15 +258,54 @@ function updateStats()
     
     mon.setCursorPos(23, monY - 4)
     mon.write(comma_value(data.totalBytes) .. " | " .. comma_value(data.usedBytes))
+end
+
+function updateStats()
+    local newCells = me.getCells()
     
-    -- Обновляем заголовок
-    mon.setCursorPos(2, 3)
-    mon.setBackgroundColor(colors.gray)
-    mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
-    mon.setBackgroundColor(colors.black)
+    if not newCells then
+        return
+    end
     
-    -- Перерисовываем кнопку (на случай если она стерлась)
-    renderUpdateButton()
+    -- Проверяем не изменилось ли количество ячеек
+    if data.cells ~= #newCells then
+        data.cells = #newCells
+        totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
+        
+        -- Проверяем не вышли ли за границы страниц
+        if currentPage > totalPages then
+            currentPage = totalPages
+        end
+        if currentPage < 1 then
+            currentPage = 1
+        end
+        
+        -- Перерисовываем всё
+        prepare()
+        return
+    end
+    
+    -- Обновляем данные для баров текущей страницы
+    local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
+    local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
+    
+    for i = startIdx, endIdx do
+        local cell = newCells[i]
+        local pos = i - startIdx + 1
+        
+        local totalBytes = cell.bytes or cell.totalBytes or 0
+        local usedBytes = cell.usedBytes or 0
+        
+        -- Обновляем бары
+        if bars and bars.set then
+            bars.set(tostring(pos), "cur", usedBytes)
+            bars.set(tostring(pos), "max", totalBytes)
+        end
+    end
+    
+    if bars and bars.screen then
+        bars.screen()
+    end
 end
 
 -- Запускаем параллельно два процесса:

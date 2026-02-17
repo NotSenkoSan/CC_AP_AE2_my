@@ -1,11 +1,16 @@
---- Modified monitor script for AE2 with pagination
---- Нажмите ПКМ по монитору для переключения страниц
+--- Modified monitor script for AE2 with pagination and update button
+--- Нажмите ПКМ для переключения страниц
+--- Нажмите ЛКМ на кнопку [ update ] для обновления
 
 mon = peripheral.find("monitor")
 me = peripheral.find("meBridge") or peripheral.find("me_bridge")
 
 if not me then
     error("ME Bridge не найден!")
+end
+
+if not mon then
+    error("Monitor не найден!")
 end
 
 -- Настройки пагинации
@@ -24,6 +29,30 @@ local monX, monY
 
 -- Загружаем bars.lua
 local bars = dofile("/CC_AP_AE2/scripts/api/bars.lua")
+
+-- Кнопка обновления
+function renderUpdateButton()
+    mon.setCursorPos(41, 38)
+    mon.setTextColor(colors.black)
+    mon.setBackgroundColor(colors.white)
+    mon.write(" [ update ] ")
+    mon.setTextColor(colors.white)
+    mon.setBackgroundColor(colors.black)
+end
+
+function isUpdateButtonPressed(x, y)
+    return y == 38 and x >= 41 and x <= 51  -- 41 + 10 символов
+end
+
+function forceUpdate()
+    -- Меняем цвет кнопки при нажатии
+    mon.setCursorPos(41, 38)
+    mon.setTextColor(colors.white)
+    mon.setBackgroundColor(colors.red)
+    mon.write(" [ update ] ")
+    sleep(0.2)
+    prepare()  -- полное обновление экрана
+end
 
 function prepare()
     mon.clear()
@@ -44,7 +73,11 @@ function prepare()
     -- Подсказка по управлению
     mon.setCursorPos(monX - 15, monY - 2)
     mon.setTextColor(colors.lightGray)
-    mon.write("RMB for next page")
+    mon.write("RMB next | LMB update")
+    
+    -- Рисуем кнопку
+    renderUpdateButton()
+    
     mon.setTextColor(colors.white)
 end
 
@@ -113,31 +146,6 @@ function addBars()
     end
 end
 
--- Функция для обработки нажатий на монитор
-function handleMonitorClick()
-    while true do
-        local event, side, x, y = os.pullEvent("monitor_touch")
-        if side == "monitor" then
-            if x == -1 then  -- ПКМ
-                nextPage()
-            else  -- ЛКМ
-                if isUpdateButtonPressed(x, y) then
-                    forceUpdate()
-                end
-            end
-        end
-    end
-end
-
-function forceUpdate()
-    mon.setCursorPos(41, 38)
-    mon.setTextColor(colors.white)
-    mon.setBackgroundColor(colors.red)
-    mon.write(" update ")
-    sleep(0.5)
-    prepare()  -- полное обновление экрана
-end
-
 function nextPage()
     local oldPage = currentPage
     currentPage = currentPage + 1
@@ -149,6 +157,21 @@ function nextPage()
         -- Перерисовываем экран
         mon.clear()
         prepare()
+    end
+end
+
+function handleMonitorClick()
+    while true do
+        local event, side, x, y = os.pullEvent("monitor_touch")
+        if side == "monitor" then  -- проверяем что нажали на наш монитор
+            if x == -1 then  -- в CC: Tweaked ПКМ передает x = -1
+                nextPage()
+            else  -- ЛКМ
+                if isUpdateButtonPressed(x, y) then
+                    forceUpdate()
+                end
+            end
+        end
     end
 end
 
@@ -287,6 +310,9 @@ function updateStats()
     mon.setBackgroundColor(colors.gray)
     mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
     mon.setBackgroundColor(colors.black)
+    
+    -- Перерисовываем кнопку (на случай если она стерлась)
+    renderUpdateButton()
 end
 
 -- Запускаем параллельно два процесса:

@@ -1,5 +1,5 @@
---- Modified monitor script for AE2
---- Adapted for cell-based API
+--- Modified monitor script for AE2 with pagination
+--- Нажмите ПКМ по монитору для переключения страниц
 
 mon = peripheral.find("monitor")
 me = peripheral.find("meBridge") or peripheral.find("me_bridge")
@@ -7,6 +7,11 @@ me = peripheral.find("meBridge") or peripheral.find("me_bridge")
 if not me then
     error("ME Bridge не найден!")
 end
+
+-- Настройки пагинации
+local CELLS_PER_PAGE = 20  -- Сколько ячеек показывать на одной странице
+local currentPage = 1
+local totalPages = 1
 
 data = {
     cells = 0,
@@ -18,7 +23,7 @@ local label = "ME Cells"
 local monX, monY
 
 -- Загружаем bars.lua
-local bars = dofile("/CC_AF_AE2/scripts/api/bars.lua")
+local bars = dofile("/CC_AP_AE2/scripts/api/bars.lua")
 
 function prepare()
     mon.clear()
@@ -32,9 +37,15 @@ function prepare()
     mon.setTextScale(1)
     mon.write(label)
     mon.setCursorPos(1, 1)
-    drawBox(2, monX - 1, 3, monY - 10, "Cells", colors.gray, colors.lightGray)
+    drawBox(2, monX - 1, 3, monY - 10, "Cells (Page " .. currentPage .. "/" .. totalPages .. ")", colors.gray, colors.lightGray)
     drawBox(2, monX - 1, monY - 8, monY - 1, "Stats", colors.gray, colors.lightGray)
     addBars()
+    
+    -- Подсказка по управлению
+    mon.setCursorPos(monX - 15, monY - 2)
+    mon.setTextColor(colors.lightGray)
+    mon.write("RMB for next page")
+    mon.setTextColor(colors.white)
 end
 
 function addBars()
@@ -47,10 +58,19 @@ function addBars()
     end
     
     data.cells = #cells
+    totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
     
-    for i = 1, #cells do
+    -- Вычисляем какие ячейки показывать на текущей странице
+    local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
+    local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
+    
+    -- Очищаем область для баров
+    clear(3, monX - 3, 4, monY - 12)
+    
+    for i = startIdx, endIdx do
         local cell = cells[i]
-        local x = 3 * i
+        local pos = i - startIdx + 1  -- позиция на экране (1-20)
+        local x = 3 * pos
         
         -- Получаем данные из ячейки
         local totalBytes = cell.bytes or cell.totalBytes or 0
@@ -61,14 +81,14 @@ function addBars()
             goto continue
         end
         
-        -- Добавляем бар (проверяем что bars существует)
+        -- Добавляем бар
         if bars and bars.add then
-            bars.add(tostring(i), "ver", totalBytes, usedBytes, 1 + x, 5, 1, monY - 16, colors.red, colors.green)
+            bars.add(tostring(pos), "ver", totalBytes, usedBytes, 1 + x, 5, 1, monY - 16, colors.red, colors.green)
         end
         
-        -- Подпись для ячейки
+        -- Подпись для ячейки (показываем реальный номер ячейки)
         mon.setCursorPos(x + 1, monY - 11)
-        mon.write(string.format("C%d", i))
+        mon.write(string.format("#%d", i))
         
         data.totalBytes = data.totalBytes + totalBytes
         data.usedBytes = data.usedBytes + usedBytes
@@ -76,12 +96,50 @@ function addBars()
         ::continue::
     end
     
-    -- Проверяем что bars существует перед вызовом
+    -- Обновляем заголовок с номером страницы
+    mon.setCursorPos(math.floor((monX/2)-(#label/2)), 1)
+    mon.setBackgroundColor(colors.black)
+    mon.write(label)
+    mon.setCursorPos(2, 3)
+    mon.setBackgroundColor(colors.gray)
+    mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
+    
+    -- Отрисовываем бары
     if bars and bars.construct then
         bars.construct(mon)
     end
     if bars and bars.screen then
         bars.screen()
+    end
+end
+
+-- Функция для обработки нажатий на монитор
+function handleMonitorClick()
+    while true do
+        local event, side, x, y = os.pullEvent("monitor_touch")
+        if side == "monitor" then  -- проверяем что нажали на наш монитор
+            -- Правая кнопка мыши (ПКМ)
+            if x == -1 then  -- в CC: Tweaked ПКМ передает x = -1
+                nextPage()
+            else
+                -- Можно добавить действия на ЛКМ если нужно
+                -- showCellInfo(x, y)
+            end
+        end
+    end
+end
+
+function nextPage()
+    local oldPage = currentPage
+    currentPage = currentPage + 1
+    if currentPage > totalPages then
+        currentPage = 1  -- зацикливаем на первую страницу
+    end
+    
+    if oldPage ~= currentPage then
+        -- Перерисовываем экран
+        mon.clear()
+        prepare()
     end
 end
 
@@ -149,14 +207,25 @@ function updateStats()
         return
     end
     
+    data.cells = #newCells
+    totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
+    
+    -- Проверяем не вышли ли за границы страниц
+    if currentPage > totalPages then
+        currentPage = totalPages
+    end
+    if currentPage < 1 then
+        currentPage = 1
+    end
+    
     if #newCells == 0 then
         clear(3, monX - 3, 4, monY - 12)
         mon.setCursorPos(4, 5)
         mon.write("No cells connected")
     else 
+        -- Считаем общую статистику со всех ячеек
         for i = 1, #newCells do
             local cell = newCells[i]
-            
             local totalBytes = cell.bytes or cell.totalBytes or 0
             local usedBytes = cell.usedBytes or 0
             
@@ -164,11 +233,23 @@ function updateStats()
                 data.totalBytes = data.totalBytes + totalBytes
                 data.usedBytes = data.usedBytes + usedBytes
             end
+        end
+        
+        -- Перерисовываем только текущую страницу
+        local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
+        local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
+        
+        for i = startIdx, endIdx do
+            local cell = newCells[i]
+            local pos = i - startIdx + 1
             
-            -- Обновляем бары если они есть
+            local totalBytes = cell.bytes or cell.totalBytes or 0
+            local usedBytes = cell.usedBytes or 0
+            
+            -- Обновляем бары
             if bars and bars.set then
-                bars.set(tostring(i), "cur", usedBytes)
-                bars.set(tostring(i), "max", totalBytes)
+                bars.set(tostring(pos), "cur", usedBytes)
+                bars.set(tostring(pos), "max", totalBytes)
             end
         end
         
@@ -192,20 +273,24 @@ function updateStats()
     mon.setCursorPos(23, monY - 4)
     mon.write(comma_value(data.totalBytes) .. " | " .. comma_value(data.usedBytes))
     
-    -- Проверяем изменение количества ячеек
-    if data.cells ~= #newCells then
-        clear(3, monX - 3, 4, monY - 12)
-        mon.setCursorPos(4, 5)
-        mon.write("Cell count changed... Rebooting")
-        sleep(2)
-        shell.run("reboot")
-    end
+    -- Обновляем заголовок
+    mon.setCursorPos(2, 3)
+    mon.setBackgroundColor(colors.gray)
+    mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
+    mon.setBackgroundColor(colors.black)
 end
 
--- Запуск
+-- Запускаем параллельно два процесса:
+-- 1. Обновление статистики
+-- 2. Обработка нажатий на монитор
 prepare()
 
-while true do
-    updateStats()
-    sleep(1)
-end
+parallel.waitForAny(
+    function()
+        while true do
+            updateStats()
+            sleep(1)
+        end
+    end,
+    handleMonitorClick
+)

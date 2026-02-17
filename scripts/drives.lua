@@ -17,7 +17,7 @@ local label = "ME Drives"
 local monX, monY
 
 -- Загружаем API для баров
-os.loadAPI("medrives/api/bars.lua")
+os.loadAPI("scripts/api/bars.lua")
 
 function prepare()
     mon.clear()

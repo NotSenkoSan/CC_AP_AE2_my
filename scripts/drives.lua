@@ -1,23 +1,24 @@
+--- Modified monitor script for AE2
+--- Adapted for cell-based API
+
 mon = peripheral.find("monitor")
 me = peripheral.find("meBridge") or peripheral.find("me_bridge")
 
--- Проверяем подключение
 if not me then
     error("ME Bridge не найден!")
 end
 
 data = {
-    drives = 0,
+    cells = 0,
     totalBytes = 0,
     usedBytes = 0,
-    totalCells = 0,
 }
 
-local label = "ME Drives"
+local label = "ME Cells"
 local monX, monY
 
--- Загружаем API для баров
-os.loadAPI("scripts/api/bars.lua")
+-- Загружаем bars.lua
+local bars = dofile("/CC_AF_AE2/scripts/api/bars.lua")
 
 function prepare()
     mon.clear()
@@ -31,92 +32,76 @@ function prepare()
     mon.setTextScale(1)
     mon.write(label)
     mon.setCursorPos(1, 1)
-    drawBox(2, monX - 1, 3, monY - 10, "Drives", colors.gray, colors.lightGray)
+    drawBox(2, monX - 1, 3, monY - 10, "Cells", colors.gray, colors.lightGray)
     drawBox(2, monX - 1, monY - 8, monY - 1, "Stats", colors.gray, colors.lightGray)
     addBars()
 end
 
 function addBars()
-    local drives = me.getDrives()
+    local cells = me.getCells()
     
-    if not drives or #drives == 0 then
+    if not cells or #cells == 0 then
         mon.setCursorPos(4, 5)
-        mon.write("No drives found!")
+        mon.write("No cells found!")
         return
     end
     
-    data.drives = #drives
+    data.cells = #cells
     
-    for i = 1, #drives do
-        local drive = drives[i]
+    for i = 1, #cells do
+        local cell = cells[i]
         local x = 3 * i
         
-        -- Получаем информацию о диске
-        local totalBytes = 0
-        local usedBytes = 0
+        -- Получаем данные из ячейки
+        local totalBytes = cell.bytes or cell.totalBytes or 0
+        local usedBytes = cell.usedBytes or 0
         
-        -- В новых версиях AE2 структура данных может отличаться
-        if drive.totalBytes and drive.usedBytes then
-            totalBytes = drive.totalBytes
-            usedBytes = drive.usedBytes
-        elseif drive.bytesMax and drive.bytesUsed then
-            totalBytes = drive.bytesMax
-            usedBytes = drive.bytesUsed
-        elseif drive.maxBytes and drive.usedBytes then
-            totalBytes = drive.maxBytes
-            usedBytes = drive.usedBytes
-        else
-            -- Если не можем определить, пропускаем
-            print("Unknown drive structure:", textutils.serialize(drive))
+        -- Пропускаем если нет данных
+        if totalBytes == 0 then
             goto continue
         end
         
-        bars.add(tostring(i), "ver", totalBytes, usedBytes, 1 + x, 5, 1, monY - 16, colors.red, colors.green)
+        -- Добавляем бар (проверяем что bars существует)
+        if bars and bars.add then
+            bars.add(tostring(i), "ver", totalBytes, usedBytes, 1 + x, 5, 1, monY - 16, colors.red, colors.green)
+        end
         
-        -- Подпись для диска
+        -- Подпись для ячейки
         mon.setCursorPos(x + 1, monY - 11)
-        mon.write(string.format("D%d", i))
+        mon.write(string.format("C%d", i))
         
         data.totalBytes = data.totalBytes + totalBytes
         data.usedBytes = data.usedBytes + usedBytes
         
-        -- Получаем количество ячеек (если доступно)
-        if drive.cells and type(drive.cells) == "table" then
-            data.totalCells = data.totalCells + #drive.cells
-        end
-        
         ::continue::
     end
     
-    bars.construct(mon)
-    bars.screen()
+    -- Проверяем что bars существует перед вызовом
+    if bars and bars.construct then
+        bars.construct(mon)
+    end
+    if bars and bars.screen then
+        bars.screen()
+    end
 end
 
 function drawBox(xMin, xMax, yMin, yMax, title, bcolor, tcolor)
     mon.setBackgroundColor(bcolor)
-    
-    -- Верхняя граница
-    for xPos = xMin, xMax do
+    for xPos = xMin, xMax, 1 do
         mon.setCursorPos(xPos, yMin)
         mon.write(" ")
     end
-    
-    -- Нижняя граница
-    for xPos = xMin, xMax do
-        mon.setCursorPos(xPos, yMax)
-        mon.write(" ")
-    end
-    
-    -- Левая и правая границы
-    for yPos = yMin, yMax do
+    for yPos = yMin, yMax, 1 do
         mon.setCursorPos(xMin, yPos)
         mon.write(" ")
         mon.setCursorPos(xMax, yPos)
         mon.write(" ")
     end
-    
-    -- Заголовок
-    mon.setCursorPos(xMin + 2, yMin)
+    for xPos = xMin, xMax, 1 do
+        mon.setCursorPos(xPos, yMax)
+        mon.write(" ")
+    end
+    mon.setCursorPos(xMin+2, yMin)
     mon.setBackgroundColor(colors.black)
     mon.setTextColor(tcolor)
     mon.write(" " .. title .. " ")
@@ -126,8 +111,8 @@ end
 
 function clear(xMin, xMax, yMin, yMax)
     mon.setBackgroundColor(colors.black)
-    for xPos = xMin, xMax do
-        for yPos = yMin, yMax do
+    for xPos = xMin, xMax, 1 do
+        for yPos = yMin, yMax, 1 do
             mon.setCursorPos(xPos, yPos)
             mon.write(" ")
         end
@@ -153,100 +138,74 @@ function roundToDecimal(num, decimalPlaces)
 end
 
 function updateStats()
-    local newDrives = me.getDrives()
+    local newCells = me.getCells()
     
-    -- Сбрасываем данные
     data.totalBytes = 0
     data.usedBytes = 0
-    data.totalCells = 0
     
-    if not newDrives then
-        data.drives = 0
-        print("getDrives() returned nil")
+    if not newCells then
+        data.cells = 0
+        print("getCells() returned nil")
         return
     end
     
-    if #newDrives == 0 then
+    if #newCells == 0 then
         clear(3, monX - 3, 4, monY - 12)
         mon.setCursorPos(4, 5)
-        mon.write("No drives connected")
+        mon.write("No cells connected")
     else 
-        for i = 1, #newDrives do
-            local drive = newDrives[i]
+        for i = 1, #newCells do
+            local cell = newCells[i]
             
-            -- Определяем правильные поля для данных
-            local totalBytes = 0
-            local usedBytes = 0
+            local totalBytes = cell.bytes or cell.totalBytes or 0
+            local usedBytes = cell.usedBytes or 0
             
-            if drive.totalBytes and drive.usedBytes then
-                totalBytes = drive.totalBytes
-                usedBytes = drive.usedBytes
-            elseif drive.bytesMax and drive.bytesUsed then
-                totalBytes = drive.bytesMax
-                usedBytes = drive.bytesUsed
-            elseif drive.maxBytes and drive.usedBytes then
-                totalBytes = drive.maxBytes
-                usedBytes = drive.usedBytes
-            else
-                -- Выводим структуру для отладки
-                print("Drive " .. i .. " structure:", textutils.serialize(drive))
-                goto skip_drive
+            if totalBytes > 0 then
+                data.totalBytes = data.totalBytes + totalBytes
+                data.usedBytes = data.usedBytes + usedBytes
             end
             
-            data.totalBytes = data.totalBytes + totalBytes
-            data.usedBytes = data.usedBytes + usedBytes
-            
-            if drive.cells and type(drive.cells) == "table" then
-                data.totalCells = data.totalCells + #drive.cells
-            end
-            
-            -- Обновляем бары (если они существуют)
-            if bars.set then
+            -- Обновляем бары если они есть
+            if bars and bars.set then
                 bars.set(tostring(i), "cur", usedBytes)
                 bars.set(tostring(i), "max", totalBytes)
             end
-            
-            ::skip_drive::
         end
         
-        if bars.screen then
+        if bars and bars.screen then
             bars.screen()
         end
     end
     
-    -- Обновляем статистику на мониторе
+    -- Обновляем статистику
     clear(3, monX - 3, monY - 5, monY - 2)
     
     mon.setCursorPos(4, monY - 6)
-    mon.write("Drives: " .. data.drives)
+    mon.write("Cells: " .. data.cells)
     
     mon.setCursorPos(4, monY - 5)
     mon.write("Full: " .. roundToDecimal(getUsage(), 2) .. "%")
     
     mon.setCursorPos(4, monY - 4)
-    mon.write("Cells: " .. data.totalCells)
-    
-    mon.setCursorPos(4, monY - 3)
     mon.write("Bytes(Total|Used):")
     
-    mon.setCursorPos(23, monY - 3)
+    mon.setCursorPos(23, monY - 4)
     mon.write(comma_value(data.totalBytes) .. " | " .. comma_value(data.usedBytes))
     
-    -- Проверяем изменение количества дисков
-    if data.drives ~= #newDrives then
+    -- Проверяем изменение количества ячеек
+    if data.cells ~= #newCells then
         clear(3, monX - 3, 4, monY - 12)
         mon.setCursorPos(4, 5)
-        mon.write("Drive count changed... Rebooting")
+        mon.write("Cell count changed... Rebooting")
         sleep(2)
         shell.run("reboot")
     end
 end
 
--- Основной цикл
+-- Запуск
 prepare()
 
 while true do
     updateStats()
-    sleep(1) -- Увеличил интервал для уменьшения нагрузки
-    
+    sleep(1)
 end

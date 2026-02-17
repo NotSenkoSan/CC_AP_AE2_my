@@ -117,16 +117,25 @@ end
 function handleMonitorClick()
     while true do
         local event, side, x, y = os.pullEvent("monitor_touch")
-        if side == "monitor" then  -- проверяем что нажали на наш монитор
-            -- Правая кнопка мыши (ПКМ)
-            if x == -1 then  -- в CC: Tweaked ПКМ передает x = -1
+        if side == "monitor" then
+            if x == -1 then  -- ПКМ
                 nextPage()
-            else
-                -- Можно добавить действия на ЛКМ если нужно
-                -- showCellInfo(x, y)
+            else  -- ЛКМ
+                if isUpdateButtonPressed(x, y) then
+                    forceUpdate()
+                end
             end
         end
     end
+end
+
+function forceUpdate()
+    mon.setCursorPos(41, 38)
+    mon.setTextColor(colors.white)
+    mon.setBackgroundColor(colors.red)
+    mon.write(" update ")
+    sleep(0.5)
+    prepare()  -- полное обновление экрана
 end
 
 function nextPage()

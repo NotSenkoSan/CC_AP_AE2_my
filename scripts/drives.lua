@@ -1,4 +1,4 @@
---- Modified monitor script for AE2 with compact navigation buttons
+--- Modified monitor script for AE2 with right-side navigation buttons
 
 mon = peripheral.find("monitor")
 me = peripheral.find("meBridge") or peripheral.find("me_bridge")
@@ -28,29 +28,55 @@ local monX, monY
 -- Загружаем bars.lua
 local bars = dofile("/CC_AP_AE2/scripts/api/bars.lua")
 
--- Компактные кнопки
+-- Кнопки справа
 function renderButtons()
-    local yPos = monY - 3  -- размещаем кнопки внизу экрана
+    local btnX = monX - 12  -- позиция кнопок справа
+    local startY = 10       -- начальная позиция по вертикали
     
-    -- Кнопка "назад" [<]
-    mon.setCursorPos(3, yPos)
-    mon.setTextColor(colors.black)
+    -- Рамка для кнопок
+    mon.setBackgroundColor(colors.gray)
+    for x = btnX - 1, monX - 2 do
+        for y = startY - 1, startY + 5 do
+            mon.setCursorPos(x, y)
+            mon.write(" ")
+        end
+    end
+    
+    -- Заголовок
+    mon.setCursorPos(btnX, startY - 1)
+    mon.setBackgroundColor(colors.black)
+    mon.setTextColor(colors.lightGray)
+    mon.write(" Navigation ")
+    
+    -- Кнопка "Назад" [<=]
+    mon.setCursorPos(btnX, startY)
     mon.setBackgroundColor(colors.white)
-    mon.write(" [<] ")
-    
-    -- Кнопка "обновить" [R]
-    mon.setCursorPos(10, yPos)
-    mon.write(" [R] ")
-    
-    -- Кнопка "вперед" [>]
-    mon.setCursorPos(17, yPos)
-    mon.write(" [>] ")
+    mon.setTextColor(colors.black)
+    mon.write("  [ <= ]  ")
     
     -- Информация о странице
-    mon.setCursorPos(25, yPos)
-    mon.setTextColor(colors.white)
+    mon.setCursorPos(btnX, startY + 1)
     mon.setBackgroundColor(colors.black)
-    mon.write("Page " .. currentPage .. "/" .. totalPages)
+    mon.setTextColor(colors.white)
+    mon.write(" Page " .. currentPage .. "/" .. totalPages .. " ")
+    
+    -- Кнопка "Вперед" [=>]
+    mon.setCursorPos(btnX, startY + 2)
+    mon.setBackgroundColor(colors.white)
+    mon.setTextColor(colors.black)
+    mon.write("  [ => ]  ")
+    
+    -- Разделитель
+    mon.setCursorPos(btnX, startY + 3)
+    mon.setBackgroundColor(colors.black)
+    mon.setTextColor(colors.gray)
+    mon.write("-----------")
+    
+    -- Кнопка "Обновить" [UPDATE]
+    mon.setCursorPos(btnX, startY + 4)
+    mon.setBackgroundColor(colors.white)
+    mon.setTextColor(colors.black)
+    mon.write(" [UPDATE] ")
     
     -- Возвращаем цвета
     mon.setTextColor(colors.white)
@@ -58,23 +84,26 @@ function renderButtons()
 end
 
 function checkButtonPress(x, y)
-    local yPos = monY - 3
+    local btnX = monX - 12
+    local startY = 10
     
-    if y ~= yPos then return nil end
+    -- Проверяем что нажатие в области кнопок
+    if x < btnX or x > monX - 2 then return nil end
+    if y < startY - 1 or y > startY + 5 then return nil end
     
-    -- Проверяем нажатие на [<]
-    if x >= 3 and x <= 7 then
+    -- Кнопка "Назад"
+    if y == startY and x >= btnX and x <= btnX + 9 then
         return "prev"
     end
     
-    -- Проверяем нажатие на [R]
-    if x >= 10 and x <= 14 then
-        return "update"
+    -- Кнопка "Вперед"
+    if y == startY + 2 and x >= btnX and x <= btnX + 9 then
+        return "next"
     end
     
-    -- Проверяем нажатие на [>]
-    if x >= 17 and x <= 21 then
-        return "next"
+    -- Кнопка "Обновить"
+    if y == startY + 4 and x >= btnX and x <= btnX + 9 then
+        return "update"
     end
     
     return nil
@@ -99,7 +128,7 @@ function prevPage()
     
     if oldPage ~= currentPage then
         refreshDisplay()
-        renderButtons()  -- перерисовываем кнопки с новой информацией
+        renderButtons()
     end
 end
 
@@ -112,17 +141,19 @@ function nextPage()
     
     if oldPage ~= currentPage then
         refreshDisplay()
-        renderButtons()  -- перерисовываем кнопки с новой информацией
+        renderButtons()
     end
 end
 
 function forceUpdate()
     -- Подсвечиваем кнопку обновления
-    local yPos = monY - 3
-    mon.setCursorPos(10, yPos)
-    mon.setTextColor(colors.white)
+    local btnX = monX - 12
+    local startY = 10
+    
+    mon.setCursorPos(btnX, startY + 4)
     mon.setBackgroundColor(colors.red)
-    mon.write(" [R] ")
+    mon.setTextColor(colors.white)
+    mon.write(" [UPDATE] ")
     sleep(0.2)
     
     prepare()
@@ -132,19 +163,14 @@ function prepare()
     mon.clear()
     monX, monY = mon.getSize()
     
-    -- Проверяем минимальный размер
-    if monX < 30 or monY < 20 then
-        error("Monitor too small! Need at least 30x20")
-    end
-    
     mon.setPaletteColor(colors.red, 0xba2525)
     mon.setBackgroundColor(colors.black)
     mon.setCursorPos(math.floor((monX/2)-(#label/2)), 1)
     mon.setTextScale(1)
     mon.write(label)
     
-    -- Рисуем рамки
-    drawBox(2, monX - 1, 3, monY - 5, "Cells", colors.gray, colors.lightGray)
+    -- Рисуем рамку для ячеек (с учетом места для кнопок справа)
+    drawBox(2, monX - 14, 3, monY - 5, "Cells", colors.gray, colors.lightGray)
     
     refreshDisplay()
     renderButtons()
@@ -163,7 +189,7 @@ function refreshDisplay()
     totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
     
     -- Очищаем область для баров
-    clear(3, monX - 3, 4, monY - 6)
+    clear(3, monX - 15, 4, monY - 6)
     
     local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
     local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
@@ -213,7 +239,6 @@ function refreshDisplay()
         bars.screen()
     end
     
-    -- Обновляем статистику
     updateStatsDisplay()
 end
 
@@ -264,7 +289,7 @@ function clear(xMin, xMax, yMin, yMax)
 end
 
 function updateStatsDisplay()
-    clear(3, monX - 3, monY - 4, monY - 2)
+    clear(3, monX - 15, monY - 4, monY - 2)
     
     mon.setCursorPos(4, monY - 3)
     mon.write(string.format("Total: %s/%s (%d%%)",
@@ -298,7 +323,6 @@ function updateStats()
     local newCells = me.getCells()
     if not newCells then return end
     
-    -- Пересчитываем статистику
     local oldTotal = data.totalBytes
     local oldUsed = data.usedBytes
     
@@ -311,13 +335,11 @@ function updateStats()
         data.usedBytes = data.usedBytes + (cell.usedBytes or 0)
     end
     
-    -- Если данные изменились, обновляем экран
     if oldTotal ~= data.totalBytes or oldUsed ~= data.usedBytes then
         refreshDisplay()
         renderButtons()
     end
     
-    -- Проверяем изменение количества ячеек
     if data.cells ~= #newCells then
         prepare()
     end

@@ -1,7 +1,4 @@
---- Modified monitor script for AE2 with navigation buttons
---- [ <= ] - предыдущая страница
---- [update] - принудительное обновление
---- [ => ] - следующая страница
+--- Modified monitor script for AE2 with compact navigation buttons
 
 mon = peripheral.find("monitor")
 me = peripheral.find("meBridge") or peripheral.find("me_bridge")
@@ -15,7 +12,7 @@ if not mon then
 end
 
 -- Настройки пагинации
-local CELLS_PER_PAGE = 20  -- Сколько ячеек показывать на одной странице
+local CELLS_PER_PAGE = 20
 local currentPage = 1
 local totalPages = 1
 
@@ -31,23 +28,29 @@ local monX, monY
 -- Загружаем bars.lua
 local bars = dofile("/CC_AP_AE2/scripts/api/bars.lua")
 
--- Функции для кнопок
+-- Компактные кнопки
 function renderButtons()
-    local startX = 30  -- начальная позиция для блока кнопок
+    local yPos = monY - 3  -- размещаем кнопки внизу экрана
     
-    -- Кнопка "назад" [ <= ]
-    mon.setCursorPos(startX, 38)
+    -- Кнопка "назад" [<]
+    mon.setCursorPos(3, yPos)
     mon.setTextColor(colors.black)
     mon.setBackgroundColor(colors.white)
-    mon.write(" [ <= ] ")
+    mon.write(" [<] ")
     
-    -- Кнопка "обновить" [update]
-    mon.setCursorPos(startX + 9, 38)
-    mon.write(" [update] ")
+    -- Кнопка "обновить" [R]
+    mon.setCursorPos(10, yPos)
+    mon.write(" [R] ")
     
-    -- Кнопка "вперед" [ => ]
-    mon.setCursorPos(startX + 20, 38)
-    mon.write(" [ => ] ")
+    -- Кнопка "вперед" [>]
+    mon.setCursorPos(17, yPos)
+    mon.write(" [>] ")
+    
+    -- Информация о странице
+    mon.setCursorPos(25, yPos)
+    mon.setTextColor(colors.white)
+    mon.setBackgroundColor(colors.black)
+    mon.write("Page " .. currentPage .. "/" .. totalPages)
     
     -- Возвращаем цвета
     mon.setTextColor(colors.white)
@@ -55,22 +58,22 @@ function renderButtons()
 end
 
 function checkButtonPress(x, y)
-    if y ~= 38 then return nil end  -- не в ряду кнопок
+    local yPos = monY - 3
     
-    local startX = 30
+    if y ~= yPos then return nil end
     
-    -- Проверяем нажатие на [ <= ]
-    if x >= startX and x <= startX + 8 then
+    -- Проверяем нажатие на [<]
+    if x >= 3 and x <= 7 then
         return "prev"
     end
     
-    -- Проверяем нажатие на [update]
-    if x >= startX + 9 and x <= startX + 18 then
+    -- Проверяем нажатие на [R]
+    if x >= 10 and x <= 14 then
         return "update"
     end
     
-    -- Проверяем нажатие на [ => ]
-    if x >= startX + 20 and x <= startX + 28 then
+    -- Проверяем нажатие на [>]
+    if x >= 17 and x <= 21 then
         return "next"
     end
     
@@ -91,11 +94,12 @@ function prevPage()
     local oldPage = currentPage
     currentPage = currentPage - 1
     if currentPage < 1 then
-        currentPage = totalPages  -- зацикливаем на последнюю страницу
+        currentPage = totalPages
     end
     
     if oldPage ~= currentPage then
         refreshDisplay()
+        renderButtons()  -- перерисовываем кнопки с новой информацией
     end
 end
 
@@ -103,49 +107,47 @@ function nextPage()
     local oldPage = currentPage
     currentPage = currentPage + 1
     if currentPage > totalPages then
-        currentPage = 1  -- зацикливаем на первую страницу
+        currentPage = 1
     end
     
     if oldPage ~= currentPage then
         refreshDisplay()
+        renderButtons()  -- перерисовываем кнопки с новой информацией
     end
 end
 
 function forceUpdate()
     -- Подсвечиваем кнопку обновления
-    local startX = 30
-    mon.setCursorPos(startX + 9, 38)
+    local yPos = monY - 3
+    mon.setCursorPos(10, yPos)
     mon.setTextColor(colors.white)
     mon.setBackgroundColor(colors.red)
-    mon.write(" [update] ")
+    mon.write(" [R] ")
     sleep(0.2)
     
-    -- Полное обновление
     prepare()
 end
 
 function prepare()
     mon.clear()
     monX, monY = mon.getSize()
-    if monX < 50 or monY < 40 then  -- увеличил требования из-за кнопок
-        error("Monitor is too small, we need a size of 50x40 minimum.")
+    
+    -- Проверяем минимальный размер
+    if monX < 30 or monY < 20 then
+        error("Monitor too small! Need at least 30x20")
     end
+    
     mon.setPaletteColor(colors.red, 0xba2525)
     mon.setBackgroundColor(colors.black)
     mon.setCursorPos(math.floor((monX/2)-(#label/2)), 1)
     mon.setTextScale(1)
     mon.write(label)
-    mon.setCursorPos(1, 1)
-    drawBox(2, monX - 1, 3, monY - 10, "Cells", colors.gray, colors.lightGray)
-    drawBox(2, monX - 1, monY - 8, monY - 1, "Stats", colors.gray, colors.lightGray)
     
-    -- Получаем данные и отображаем текущую страницу
+    -- Рисуем рамки
+    drawBox(2, monX - 1, 3, monY - 5, "Cells", colors.gray, colors.lightGray)
+    
     refreshDisplay()
-    
-    -- Рисуем кнопки
     renderButtons()
-    
-    mon.setTextColor(colors.white)
 end
 
 function refreshDisplay()
@@ -161,23 +163,21 @@ function refreshDisplay()
     totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
     
     -- Очищаем область для баров
-    clear(3, monX - 3, 4, monY - 12)
+    clear(3, monX - 3, 4, monY - 6)
     
-    -- Вычисляем какие ячейки показывать на текущей странице
     local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
     local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
     
-    -- Обновляем заголовок с номером страницы
+    -- Обновляем заголовок
     mon.setCursorPos(2, 3)
     mon.setBackgroundColor(colors.gray)
-    mon.write(" Cells (Page " .. currentPage .. "/" .. totalPages .. ") ")
+    mon.write(" Cells " .. startIdx .. "-" .. endIdx .. "/" .. data.cells .. " ")
     mon.setBackgroundColor(colors.black)
     
-    -- Сбрасываем счетчики
+    -- Считаем общую статистику
     data.totalBytes = 0
     data.usedBytes = 0
     
-    -- Сначала посчитаем общую статистику со всех ячеек
     for i = 1, #cells do
         local cell = cells[i]
         local totalBytes = cell.bytes or cell.totalBytes or 0
@@ -189,34 +189,23 @@ function refreshDisplay()
         end
     end
     
-    -- Теперь отображаем только ячейки текущей страницы
+    -- Отображаем ячейки текущей страницы
     for i = startIdx, endIdx do
         local cell = cells[i]
-        local pos = i - startIdx + 1  -- позиция на экране (1-20)
+        local pos = i - startIdx + 1
         local x = 3 * pos
         
-        -- Получаем данные из ячейки
         local totalBytes = cell.bytes or cell.totalBytes or 0
         local usedBytes = cell.usedBytes or 0
         
-        -- Пропускаем если нет данных
-        if totalBytes == 0 then
-            goto continue
+        if totalBytes > 0 and bars and bars.add then
+            bars.add(tostring(pos), "ver", totalBytes, usedBytes, 1 + x, 5, 1, monY - 12, colors.red, colors.green)
+            
+            mon.setCursorPos(x + 1, monY - 7)
+            mon.write(string.format("%d", i))
         end
-        
-        -- Добавляем бар
-        if bars and bars.add then
-            bars.add(tostring(pos), "ver", totalBytes, usedBytes, 1 + x, 5, 1, monY - 16, colors.red, colors.green)
-        end
-        
-        -- Подпись для ячейки (показываем реальный номер ячейки)
-        mon.setCursorPos(x + 1, monY - 11)
-        mon.write(string.format("#%d", i))
-        
-        ::continue::
     end
     
-    -- Отрисовываем бары
     if bars and bars.construct then
         bars.construct(mon)
     end
@@ -224,7 +213,7 @@ function refreshDisplay()
         bars.screen()
     end
     
-    -- Обновляем статистику внизу
+    -- Обновляем статистику
     updateStatsDisplay()
 end
 
@@ -232,7 +221,6 @@ function handleMonitorClick()
     while true do
         local event, side, x, y = os.pullEvent("monitor_touch")
         if side == "monitor" then
-            -- Проверяем нажатие на кнопки
             local button = checkButtonPress(x, y)
             if button then
                 buttonPress(button)
@@ -243,17 +231,17 @@ end
 
 function drawBox(xMin, xMax, yMin, yMax, title, bcolor, tcolor)
     mon.setBackgroundColor(bcolor)
-    for xPos = xMin, xMax, 1 do
+    for xPos = xMin, xMax do
         mon.setCursorPos(xPos, yMin)
         mon.write(" ")
     end
-    for yPos = yMin, yMax, 1 do
+    for yPos = yMin, yMax do
         mon.setCursorPos(xMin, yPos)
         mon.write(" ")
         mon.setCursorPos(xMax, yPos)
         mon.write(" ")
     end
-    for xPos = xMin, xMax, 1 do
+    for xPos = xMin, xMax do
         mon.setCursorPos(xPos, yMax)
         mon.write(" ")
     end
@@ -267,12 +255,22 @@ end
 
 function clear(xMin, xMax, yMin, yMax)
     mon.setBackgroundColor(colors.black)
-    for xPos = xMin, xMax, 1 do
-        for yPos = yMin, yMax, 1 do
+    for xPos = xMin, xMax do
+        for yPos = yMin, yMax do
             mon.setCursorPos(xPos, yPos)
             mon.write(" ")
         end
     end
+end
+
+function updateStatsDisplay()
+    clear(3, monX - 3, monY - 4, monY - 2)
+    
+    mon.setCursorPos(4, monY - 3)
+    mon.write(string.format("Total: %s/%s (%d%%)",
+        comma_value(data.usedBytes),
+        comma_value(data.totalBytes),
+        roundToDecimal(getUsage(), 1)))
 end
 
 function getUsage()
@@ -282,116 +280,57 @@ end
 
 function comma_value(n)
     if not n then return "0" end
-    local left, num, right = string.match(tostring(n), '^([^%d]*%d)(%d*)(.-)$')
-    if not left then return tostring(n) end
-    return left .. (num:reverse():gsub('(%d%d%d)', '%1,'):reverse()) .. (right or "")
+    local s = tostring(n)
+    local k = 3
+    while k < #s do
+        s = s:sub(1, -k-1) .. "," .. s:sub(-k)
+        k = k + 4
+    end
+    return s
 end
 
-function roundToDecimal(num, decimalPlaces)
-    if not num then return 0 end
-    local mult = 10^(decimalPlaces or 0)
+function roundToDecimal(num, places)
+    local mult = 10^(places or 0)
     return math.floor(num * mult + 0.5) / mult
-end
-
-function updateStatsDisplay()
-    -- Обновляем статистику
-    clear(3, monX - 3, monY - 5, monY - 2)
-    
-    mon.setCursorPos(4, monY - 6)
-    mon.write("Cells: " .. data.cells)
-    
-    mon.setCursorPos(4, monY - 5)
-    mon.write("Full: " .. roundToDecimal(getUsage(), 2) .. "%")
-    
-    mon.setCursorPos(4, monY - 4)
-    mon.write("Bytes(Total|Used):")
-    
-    mon.setCursorPos(23, monY - 4)
-    mon.write(comma_value(data.totalBytes) .. " | " .. comma_value(data.usedBytes))
 end
 
 function updateStats()
     local newCells = me.getCells()
+    if not newCells then return end
     
-    if not newCells then
-        return
-    end
+    -- Пересчитываем статистику
+    local oldTotal = data.totalBytes
+    local oldUsed = data.usedBytes
     
-    -- Сохраняем старые данные для проверки изменений
-    local oldTotalBytes = data.totalBytes
-    local oldUsedBytes = data.usedBytes
-    
-    -- Пересчитываем общую статистику
     data.totalBytes = 0
     data.usedBytes = 0
     
     for i = 1, #newCells do
         local cell = newCells[i]
-        local totalBytes = cell.bytes or cell.totalBytes or 0
-        local usedBytes = cell.usedBytes or 0
-        
-        if totalBytes > 0 then
-            data.totalBytes = data.totalBytes + totalBytes
-            data.usedBytes = data.usedBytes + usedBytes
-        end
+        data.totalBytes = data.totalBytes + (cell.bytes or cell.totalBytes or 0)
+        data.usedBytes = data.usedBytes + (cell.usedBytes or 0)
     end
     
-    -- Проверяем не изменилось ли количество ячеек
+    -- Если данные изменились, обновляем экран
+    if oldTotal ~= data.totalBytes or oldUsed ~= data.usedBytes then
+        refreshDisplay()
+        renderButtons()
+    end
+    
+    -- Проверяем изменение количества ячеек
     if data.cells ~= #newCells then
-        data.cells = #newCells
-        totalPages = math.ceil(data.cells / CELLS_PER_PAGE)
-        
-        -- Проверяем не вышли ли за границы страниц
-        if currentPage > totalPages then
-            currentPage = totalPages
-        end
-        if currentPage < 1 then
-            currentPage = 1
-        end
-        
-        -- Перерисовываем всё
         prepare()
-        return
-    end
-    
-    -- Обновляем данные для баров текущей страницы
-    local startIdx = (currentPage - 1) * CELLS_PER_PAGE + 1
-    local endIdx = math.min(startIdx + CELLS_PER_PAGE - 1, data.cells)
-    
-    for i = startIdx, endIdx do
-        local cell = newCells[i]
-        local pos = i - startIdx + 1
-        
-        local totalBytes = cell.bytes or cell.totalBytes or 0
-        local usedBytes = cell.usedBytes or 0
-        
-        -- Обновляем бары
-        if bars and bars.set then
-            bars.set(tostring(pos), "cur", usedBytes)
-            bars.set(tostring(pos), "max", totalBytes)
-        end
-    end
-    
-    if bars and bars.screen then
-        bars.screen()
-    end
-    
-    -- Если изменились значения, обновляем статистику внизу
-    if oldTotalBytes ~= data.totalBytes or oldUsedBytes ~= data.usedBytes then
-        updateStatsDisplay()
     end
 end
 
--- Запускаем параллельно два процесса:
--- 1. Обновление статистики
--- 2. Обработка нажатий на монитор
+-- Запуск
 prepare()
 
 parallel.waitForAny(
     function()
         while true do
             updateStats()
-            sleep(1)
+            sleep(2)
         end
     end,
     handleMonitorClick

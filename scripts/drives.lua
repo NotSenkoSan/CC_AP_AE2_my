@@ -1,6 +1,7 @@
---- Modified monitor script for AE2 with pagination and update button
---- Нажмите ПКМ для переключения страниц
---- Нажмите ЛКМ на кнопку [ update ] для обновления
+--- Modified monitor script for AE2 with navigation buttons
+--- [ <= ] - предыдущая страница
+--- [update] - принудительное обновление
+--- [ => ] - следующая страница
 
 mon = peripheral.find("monitor")
 me = peripheral.find("meBridge") or peripheral.find("me_bridge")
@@ -30,35 +31,104 @@ local monX, monY
 -- Загружаем bars.lua
 local bars = dofile("/CC_AP_AE2/scripts/api/bars.lua")
 
--- Кнопка обновления
-function renderUpdateButton()
-    mon.setCursorPos(41, 38)
+-- Функции для кнопок
+function renderButtons()
+    local startX = 30  -- начальная позиция для блока кнопок
+    
+    -- Кнопка "назад" [ <= ]
+    mon.setCursorPos(startX, 38)
     mon.setTextColor(colors.black)
     mon.setBackgroundColor(colors.white)
-    mon.write(" [ update ] ")
+    mon.write(" [ <= ] ")
+    
+    -- Кнопка "обновить" [update]
+    mon.setCursorPos(startX + 9, 38)
+    mon.write(" [update] ")
+    
+    -- Кнопка "вперед" [ => ]
+    mon.setCursorPos(startX + 20, 38)
+    mon.write(" [ => ] ")
+    
+    -- Возвращаем цвета
     mon.setTextColor(colors.white)
     mon.setBackgroundColor(colors.black)
 end
 
-function isUpdateButtonPressed(x, y)
-    return y == 38 and x >= 41 and x <= 51  -- 41 + 10 символов
+function checkButtonPress(x, y)
+    if y ~= 38 then return nil end  -- не в ряду кнопок
+    
+    local startX = 30
+    
+    -- Проверяем нажатие на [ <= ]
+    if x >= startX and x <= startX + 8 then
+        return "prev"
+    end
+    
+    -- Проверяем нажатие на [update]
+    if x >= startX + 9 and x <= startX + 18 then
+        return "update"
+    end
+    
+    -- Проверяем нажатие на [ => ]
+    if x >= startX + 20 and x <= startX + 28 then
+        return "next"
+    end
+    
+    return nil
+end
+
+function buttonPress(button)
+    if button == "prev" then
+        prevPage()
+    elseif button == "update" then
+        forceUpdate()
+    elseif button == "next" then
+        nextPage()
+    end
+end
+
+function prevPage()
+    local oldPage = currentPage
+    currentPage = currentPage - 1
+    if currentPage < 1 then
+        currentPage = totalPages  -- зацикливаем на последнюю страницу
+    end
+    
+    if oldPage ~= currentPage then
+        refreshDisplay()
+    end
+end
+
+function nextPage()
+    local oldPage = currentPage
+    currentPage = currentPage + 1
+    if currentPage > totalPages then
+        currentPage = 1  -- зацикливаем на первую страницу
+    end
+    
+    if oldPage ~= currentPage then
+        refreshDisplay()
+    end
 end
 
 function forceUpdate()
-    -- Меняем цвет кнопки при нажатии
-    mon.setCursorPos(41, 38)
+    -- Подсвечиваем кнопку обновления
+    local startX = 30
+    mon.setCursorPos(startX + 9, 38)
     mon.setTextColor(colors.white)
     mon.setBackgroundColor(colors.red)
-    mon.write(" [ update ] ")
+    mon.write(" [update] ")
     sleep(0.2)
-    prepare()  -- полное обновление экрана
+    
+    -- Полное обновление
+    prepare()
 end
 
 function prepare()
     mon.clear()
     monX, monY = mon.getSize()
-    if monX < 38 or monY < 25 then
-        error("Monitor is too small, we need a size of 39x and 26y minimum.")
+    if monX < 50 or monY < 40 then  -- увеличил требования из-за кнопок
+        error("Monitor is too small, we need a size of 50x40 minimum.")
     end
     mon.setPaletteColor(colors.red, 0xba2525)
     mon.setBackgroundColor(colors.black)
@@ -72,13 +142,8 @@ function prepare()
     -- Получаем данные и отображаем текущую страницу
     refreshDisplay()
     
-    -- Подсказка по управлению
-    mon.setCursorPos(monX - 15, monY - 2)
-    mon.setTextColor(colors.lightGray)
-    mon.write("RMB next | LMB update")
-    
-    -- Рисуем кнопку
-    renderUpdateButton()
+    -- Рисуем кнопки
+    renderButtons()
     
     mon.setTextColor(colors.white)
 end
@@ -163,29 +228,14 @@ function refreshDisplay()
     updateStatsDisplay()
 end
 
-function nextPage()
-    local oldPage = currentPage
-    currentPage = currentPage + 1
-    if currentPage > totalPages then
-        currentPage = 1  -- зацикливаем на первую страницу
-    end
-    
-    if oldPage ~= currentPage then
-        -- Перерисовываем только область с барами, не трогая рамки
-        refreshDisplay()
-    end
-end
-
 function handleMonitorClick()
     while true do
         local event, side, x, y = os.pullEvent("monitor_touch")
-        if side == "monitor" then  -- проверяем что нажали на наш монитор
-            if x == -1 then  -- в CC: Tweaked ПКМ передает x = -1
-                nextPage()
-            else  -- ЛКМ
-                if isUpdateButtonPressed(x, y) then
-                    forceUpdate()
-                end
+        if side == "monitor" then
+            -- Проверяем нажатие на кнопки
+            local button = checkButtonPress(x, y)
+            if button then
+                buttonPress(button)
             end
         end
     end
@@ -267,6 +317,25 @@ function updateStats()
         return
     end
     
+    -- Сохраняем старые данные для проверки изменений
+    local oldTotalBytes = data.totalBytes
+    local oldUsedBytes = data.usedBytes
+    
+    -- Пересчитываем общую статистику
+    data.totalBytes = 0
+    data.usedBytes = 0
+    
+    for i = 1, #newCells do
+        local cell = newCells[i]
+        local totalBytes = cell.bytes or cell.totalBytes or 0
+        local usedBytes = cell.usedBytes or 0
+        
+        if totalBytes > 0 then
+            data.totalBytes = data.totalBytes + totalBytes
+            data.usedBytes = data.usedBytes + usedBytes
+        end
+    end
+    
     -- Проверяем не изменилось ли количество ячеек
     if data.cells ~= #newCells then
         data.cells = #newCells
@@ -305,6 +374,11 @@ function updateStats()
     
     if bars and bars.screen then
         bars.screen()
+    end
+    
+    -- Если изменились значения, обновляем статистику внизу
+    if oldTotalBytes ~= data.totalBytes or oldUsedBytes ~= data.usedBytes then
+        updateStatsDisplay()
     end
 end
 
